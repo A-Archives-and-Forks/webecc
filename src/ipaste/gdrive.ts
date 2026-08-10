@@ -125,7 +125,7 @@ export class GoogleDriveManager {
     return response;
   }
 
-  async saveBackup(ec: any, plainText: string, ciphertext: string, pubkey: string, salt: string, description: string): Promise<string> {
+  async saveBackup(ec: any, plainText: string, ciphertext: string | Uint8Array, pubkey: string, salt: string, description: string): Promise<string> {
     await this.ensureAuthorized();
 
     const phash = await computePhash(ec, plainText, salt);
@@ -136,9 +136,10 @@ export class GoogleDriveManager {
     // Check if file with same phash already exists
     const existingFile = await this.findBackupByPhash(phash, pubkeyFolderId);
 
+    const isBinary = ciphertext instanceof Uint8Array;
     const metadata = {
       name: fileName,
-      mimeType: 'text/plain',
+      mimeType: isBinary ? 'application/octet-stream' : 'text/plain',
       description,
       ...(existingFile ? {} : { parents: [pubkeyFolderId] }),
     };
@@ -172,7 +173,7 @@ export class GoogleDriveManager {
     return data.files || [];
   }
 
-  async readBackup(fileId: string): Promise<string> {
+  async readBackup(fileId: string): Promise<string | Uint8Array> {
     await this.ensureAuthorized();
 
     const response = await this.driveFetch(`/files/${fileId}?alt=media`);
@@ -182,8 +183,12 @@ export class GoogleDriveManager {
       throw new Error(`Failed to read file: ${response.status} ${errText}`);
     }
 
-    const text = await response.text();
-    return text.trim();
+    const buffer = new Uint8Array(await response.arrayBuffer());
+    // Detect B. binary format: 0x42='B', 0x2E='.'
+    if (buffer.length >= 2 && buffer[0] === 0x42 && buffer[1] === 0x2E) {
+      return buffer;
+    }
+    return new TextDecoder().decode(buffer).trim();
   }
 
   // --- Resumable Upload ---
@@ -215,10 +220,9 @@ export class GoogleDriveManager {
     return sessionUrl;
   }
 
-  private async uploadContent(sessionUrl: string, content: string): Promise<string> {
+  private async uploadContent(sessionUrl: string, content: string | Uint8Array): Promise<string> {
     const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
-    const encoder = new TextEncoder();
-    const data = encoder.encode(content);
+    const data = content instanceof Uint8Array ? content : new TextEncoder().encode(content);
     const total = data.length;
     const MAX_RETRIES = 3;
 
@@ -236,7 +240,7 @@ export class GoogleDriveManager {
               'Content-Type': 'application/octet-stream',
               'Content-Length': String(total),
             },
-            body: content,
+            body: data,
           });
           if (response.ok) {
             const result = await response.json();

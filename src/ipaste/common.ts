@@ -29,7 +29,7 @@ export interface AppState {
   fileMode: boolean;
   fileData: File | null;
   fileName: string | null;
-  fileCipher: string | null;
+  fileCipher: string | Uint8Array | null;
 }
 
 export function createAppState(): AppState {
@@ -277,7 +277,7 @@ export function bindFileRemoveBtn(state: AppState) {
   };
 }
 
-export function enterFileModeUI(state: AppState, fileName?: string, cipher?: string) {
+export function enterFileModeUI(state: AppState, fileName?: string, cipher?: string | Uint8Array) {
   state.fileMode = true;
   state.fileData = null;
   state.fileName = fileName || null;
@@ -444,6 +444,36 @@ export async function decryptFileContent(ec: any, ciphertext: string, privkey: s
   return await ec.decrypt(privkey, new Uint8Array(decryptedBuffer));
 }
 
+// --- File Encryption/Decryption (B. binary format) ---
+
+export async function encryptFileContentBinary(ec: any, fileBytes: Uint8Array, pubkey: string, salt: string): Promise<Uint8Array> {
+  let enc = await ec.encrypt(pubkey, fileBytes);
+  let cipher = ec.base64Encode(enc, 0);
+
+  const contentKey = await generateContentKey(pubkey, salt);
+  const cipherBytes = ec.base64Decode(cipher, 0);
+  const encryptedCipher = await aesGcmEncrypt(cipherBytes, contentKey);
+
+  const prefix = new TextEncoder().encode('B.');
+  const result = new Uint8Array(prefix.length + encryptedCipher.length);
+  result.set(prefix, 0);
+  result.set(encryptedCipher, prefix.length);
+  return result;
+}
+
+export async function decryptFileContentBinary(ec: any, data: Uint8Array, privkey: string, pubkey: string, salt: string): Promise<Uint8Array> {
+  const encryptedData = data.slice(2); // strip "B."
+
+  let decryptedBuffer: ArrayBuffer;
+  try {
+    decryptedBuffer = await aesGcmDecrypt(encryptedData, await generateContentKey(pubkey, salt));
+  } catch {
+    throw new Error(messages.errDecryptAes);
+  }
+
+  return await ec.decrypt(privkey, new Uint8Array(decryptedBuffer));
+}
+
 export function downloadFile(bytes: Uint8Array, filename: string) {
   const blob = new Blob([bytes], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
@@ -494,11 +524,36 @@ export function bindDecryptBtn(ec: any, state: AppState) {
     }
 
     let base64: string | null = null;
+    let binaryCipher: Uint8Array | null = null;
     if (state.fileMode && state.fileCipher) {
-      base64 = state.fileCipher;
+      if (state.fileCipher instanceof Uint8Array) {
+        binaryCipher = state.fileCipher;
+      } else {
+        base64 = state.fileCipher;
+      }
     } else {
       base64 = getResultText()?.trim() || null;
     }
+
+    // B. binary format
+    if (binaryCipher) {
+      if (!(binaryCipher[0] === 0x42 && binaryCipher[1] === 0x2E)) {
+        setErrMsg(messages.errNeedFormat);
+        return;
+      }
+      try {
+        const fileBytes = await decryptFileContentBinary(ec, binaryCipher, privkey, state.G_Input.pubkey, state.G_Input.salt);
+        const filename = state.fileData?.name || state.fileName || 'decrypted-file';
+        downloadFile(fileBytes, filename);
+        setSyncStatus(messages.fileDecryptDownload);
+        setTimeout(() => exitFileMode(state), 500);
+        return;
+      } catch {
+        setErrMsg(messages.errDecryptEc);
+        return;
+      }
+    }
+
     if (!base64) {
       setErrMsg(messages.errEmptyContent);
       return;

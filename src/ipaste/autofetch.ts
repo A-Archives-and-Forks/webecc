@@ -1,7 +1,7 @@
 import { jsMessages as messages } from '@i18n/js-messages';
 import {
   createAppState, bindCommonButtons, initBookmark, setErrMsg,
-  setSyncStatus, setResultText, getResultText, getPlainText, encryptContent, encryptFileContent,
+  setSyncStatus, setResultText, getResultText, getPlainText, encryptContent, encryptFileContent, encryptFileContentBinary,
   showBuildInfo, initSquircle, applyComputePrivkeyBtnSquircle,
   hideFileLocked, bindFilePaste, showFileLocked, enterFileModeUI, exitFileMode,
 } from './common';
@@ -245,7 +245,8 @@ async function handleGDriveHistoryClick(ec: any, state: any, file: any, el: HTML
     const manager = getGDriveManager();
     const content = await manager.readBackup(file.id);
     if (content) {
-      if (content.startsWith('F.')) {
+      const isFileContent = (content instanceof Uint8Array) || (typeof content === 'string' && content.startsWith('F.'));
+      if (isFileContent) {
         let fileName = 'decrypted-file';
         try {
           const obj = JSON.parse(file.description || '');
@@ -262,7 +263,7 @@ async function handleGDriveHistoryClick(ec: any, state: any, file: any, el: HTML
         setSyncStatus(messages.gdriveLoadSuccessFile);
       } else {
         if (state.fileMode) exitFileMode(state);
-        setResultText(content);
+        setResultText(content as string);
         setSyncStatus(messages.gdriveLoadSuccess);
       }
     }
@@ -323,8 +324,8 @@ async function bindGoogleDriveSaveBtn(ec: any, state: any) {
         // === File mode ===
         const file = state.fileData;
         const fileBytes = new Uint8Array(await file.arrayBuffer());
-        const ciphertext = await encryptFileContent(ec, fileBytes, pubkey, salt);
-        const desc = JSON.stringify({ note: file.name, ft: "F" });
+        const ciphertext = await encryptFileContentBinary(ec, fileBytes, pubkey, salt);
+        const desc = JSON.stringify({ note: file.name, ft: "B" });
         await manager.saveBackup(ec, file.name, ciphertext, pubkey, salt, desc);
         showFileLocked();
         setSyncStatus(messages.gdriveSaveSuccessFile);
@@ -385,7 +386,8 @@ async function bindGoogleDriveLoadBtn(ec: any, state: any) {
 
       const content = await manager.readBackup(selectedFile.id);
       if (content) {
-        if (content.startsWith('F.')) {
+        const isFileContent = (content instanceof Uint8Array) || (typeof content === 'string' && content.startsWith('F.'));
+        if (isFileContent) {
           // Extract note from description for filename
           let fileName = 'decrypted-file';
           try {
@@ -404,7 +406,7 @@ async function bindGoogleDriveLoadBtn(ec: any, state: any) {
           setSyncStatus(messages.gdriveLoadSuccessFile);
         } else {
           if (state.fileMode) exitFileMode(state);
-          setResultText(content);
+          setResultText(content as string);
           setSyncStatus(messages.gdriveLoadSuccess);
         }
       }
