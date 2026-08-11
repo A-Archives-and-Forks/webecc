@@ -82,7 +82,7 @@ export const htmlMessages: HtmlMessages = {
   btnSaveGdrive: 'Save to Google Drive',
   btnLoadGdrive: 'Load from Google Drive',
   gdriveTitle: 'Google Drive',
-  gdriveDescLabel: 'Description',
-  gdriveDescPlaceholder: 'Description (required)',
+  gdriveDescLabel: 'Filename',
+  gdriveDescPlaceholder: 'Filename (required)',
   gdriveNote: 'Data stored in your Google Drive. Suitable for large files > 250KB.',
 };

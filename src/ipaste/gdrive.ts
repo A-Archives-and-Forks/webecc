@@ -6,11 +6,16 @@ export function getPubkeyFolderName(pubkey: string): string {
   return 'P-' + safe.slice(0, 13);
 }
 
+function sanitizeFileName(note: string): string {
+  return note.replace(/[\/\\:*?"<>|]/g, '_').trim();
+}
+
 export interface GDriveFile {
   id: string;
   name: string;
   modifiedTime: string;
   description?: string;
+  appProperties?: Record<string, string>;
 }
 
 // --- GoogleDriveManager ---
@@ -129,7 +134,16 @@ export class GoogleDriveManager {
     await this.ensureAuthorized();
 
     const phash = await computePhash(ec, plainText, salt);
-    const fileName = `i-${phash}.ipgd`;
+
+    let note = '';
+    let ft = 'N';
+    try {
+      const descObj = JSON.parse(description);
+      note = descObj.note || '';
+      ft = descObj.ft || 'N';
+    } catch {}
+    const sanitized = sanitizeFileName(note);
+    const fileName = sanitized ? `${sanitized}.ipgd` : `i-${phash}.ipgd`;
 
     const pubkeyFolderId = await this.ensurePubkeyFolder(pubkey);
 
@@ -141,6 +155,7 @@ export class GoogleDriveManager {
       name: fileName,
       mimeType: isBinary ? 'application/octet-stream' : 'text/plain',
       description,
+      appProperties: { phash, fileType: ft },
       ...(existingFile ? {} : { parents: [pubkeyFolderId] }),
     };
 
@@ -153,11 +168,11 @@ export class GoogleDriveManager {
   async listBackups(pubkey: string, salt: string, ec: any): Promise<GDriveFile[]> {
     await this.ensureAuthorized();
     const pubkeyFolderId = await this.ensurePubkeyFolder(pubkey);
-    const query = `name contains 'i-' and trashed=false and '${pubkeyFolderId}' in parents`;
+    const query = `name contains '.ipgd' and trashed=false and '${pubkeyFolderId}' in parents`;
 
     const params = new URLSearchParams({
       q: query,
-      fields: 'files(id,name,modifiedTime,description)',
+      fields: 'files(id,name,modifiedTime,description,appProperties)',
       orderBy: 'modifiedTime desc',
       pageSize: '50',
     });
@@ -322,9 +337,8 @@ export class GoogleDriveManager {
   }
 
   private async findBackupByPhash(phash: string, folderId: string): Promise<GDriveFile | null> {
-    const fileName = `i-${phash}.ipgd`;
-    const query = `name='${fileName}' and trashed=false and '${folderId}' in parents`;
-    const response = await this.driveFetch(`/files?q=${encodeURIComponent(query)}&fields=files(id,name,modifiedTime)`);
+    const query = `appProperties has { key='phash' and value='${phash}' } and trashed=false and '${folderId}' in parents`;
+    const response = await this.driveFetch(`/files?q=${encodeURIComponent(query)}&fields=files(id,name,modifiedTime,appProperties)`);
     if (!response.ok) return null;
     const data = await response.json();
     return (data.files && data.files.length > 0) ? data.files[0] : null;

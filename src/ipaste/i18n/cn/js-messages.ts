@@ -27,7 +27,7 @@ export const jsMessages: JsMessages = {
   gdriveLoadFailed: '加载失败',
   gdriveLoadCanceled: '已取消选择文件',
   gdriveNoFiles: 'Google Drive 上未找到备份',
-  gdriveDescRequired: '请输入描述',
+  gdriveDescRequired: '请输入文件名',
   gdriveStatusReady: 'Google Drive：未连接',
   gdriveStatusReady_: 'Google Drive：已连接',
   gdriveLoading: '正在从 Google Drive 加载...',

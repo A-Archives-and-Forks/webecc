@@ -34,5 +34,5 @@ export const jsMessages: JsMessages = {
   gdriveLoadFailed: 'Load failed',
   gdriveLoadCanceled: 'File selection canceled',
   gdriveNoFiles: 'No backups found on Google Drive',
-  gdriveDescRequired: 'Please enter a description',
+  gdriveDescRequired: 'Please enter a filename',
 };
