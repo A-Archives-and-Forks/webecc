@@ -129,7 +129,7 @@ export class GoogleDriveManager {
     await this.ensureAuthorized();
 
     const phash = await computePhash(ec, plainText, salt);
-    const fileName = `i-${phash}.txt`;
+    const fileName = `i-${phash}.ipgd`;
 
     const pubkeyFolderId = await this.ensurePubkeyFolder(pubkey);
 
@@ -322,7 +322,7 @@ export class GoogleDriveManager {
   }
 
   private async findBackupByPhash(phash: string, folderId: string): Promise<GDriveFile | null> {
-    const fileName = `i-${phash}.txt`;
+    const fileName = `i-${phash}.ipgd`;
     const query = `name='${fileName}' and trashed=false and '${folderId}' in parents`;
     const response = await this.driveFetch(`/files?q=${encodeURIComponent(query)}&fields=files(id,name,modifiedTime)`);
     if (!response.ok) return null;
