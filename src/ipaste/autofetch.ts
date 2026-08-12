@@ -325,8 +325,10 @@ async function bindGoogleDriveSaveBtn(ec: any, state: any) {
         const file = state.fileData;
         const fileBytes = new Uint8Array(await file.arrayBuffer());
         const ciphertext = await encryptFileContentBinary(ec, fileBytes, pubkey, salt);
-        const desc = JSON.stringify({ note: file.name, ft: "B" });
-        await manager.saveBackup(ec, file.name, ciphertext, pubkey, salt, desc);
+
+        const descInput = (document.getElementById('gdriveDesc') as HTMLInputElement)?.value?.trim() || file.name;
+        const desc = JSON.stringify({ note: descInput, ft: "B" });
+        await manager.saveBackup(ec, descInput, ciphertext, pubkey, salt, desc);
         showFileLocked();
         setSyncStatus(messages.gdriveSaveSuccessFile);
       } else {
