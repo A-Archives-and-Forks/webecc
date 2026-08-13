@@ -17,7 +17,7 @@ export const jsMessages: JsMessages = {
   historyDeleteConfirm: 'Delete this record? This cannot be undone.',
   historyDeleteSuccess: 'Deleted',
   historyDeleteFailed: 'Delete failed',
-  historyDeleteNotInit: 'This key is not initialized on the cloud. Open the cloud page with the sec link once, then delete again',
+  historyDeleteNotInit: 'Cloud initialization is not complete yet, please retry later',
   historyDeleteCode: 'Enter the code below to confirm deletion',
   historyDeleteCodeMismatch: 'Incorrect code, not deleted',
   emailSubjectDefault: 'Backup',

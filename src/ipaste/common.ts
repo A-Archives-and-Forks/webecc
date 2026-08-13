@@ -11,6 +11,42 @@ export const KDF_V2 = {
 export const WEB_PRIVATE = "yNmVrcoS5D4xMTvjAPSkZe57HZqPZoIUxznm+SqWKFo=";
 export const WEB_PUBLIC = "dTj41nmwoLcguLpM9AntyKgg67xx6K4UAxc27CLIcFw=";
 
+// --- D1 init 标记（本地缓存，避免重复 /init） ---
+
+const D1_API_BASE = 'https://msgbrd.vercel.app';
+const D1_INIT_MARK_KEY = 'd1InitedKeys';
+
+function isD1KeyInited(key: string): boolean {
+  try {
+    const map = JSON.parse(localStorage.getItem(D1_INIT_MARK_KEY) || '{}');
+    return !!map[key];
+  } catch {
+    return false;
+  }
+}
+
+function markD1KeyInited(key: string): void {
+  try {
+    const map = JSON.parse(localStorage.getItem(D1_INIT_MARK_KEY) || '{}');
+    map[key] = true;
+    localStorage.setItem(D1_INIT_MARK_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
+
+// 非阻塞后台调用 /init：本地无标记时触发，不等待、不阻塞主流程
+export function fireD1Init(key: string, secret: string): void {
+  if (isD1KeyInited(key)) return;
+  fetch(`${D1_API_BASE}/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, secret }),
+  })
+    .then((res) => {
+      if (res.ok) markD1KeyInited(key);
+    })
+    .catch(() => { /* 静默失败，下次触发时重试 */ });
+}
+
 // --- Types ---
 
 export interface InputData {
@@ -653,6 +689,8 @@ export function bindSaveBtn(ec: any, state: AppState) {
     const salt = state.G_Input!.salt!;
     const { key: rawKey, secret } = await generateKeySecret(ec, pubkey, salt);
     const key = encodeURIComponent(rawKey);
+    // 后台 init（不阻塞），使该 key 后续可删除
+    fireD1Init(rawKey, secret);
 
     let te = new TextEncoder();
     let enc = await ec.encrypt(pubkey, te.encode(plainText));
@@ -680,7 +718,7 @@ export function bindSaveBtn(ec: any, state: AppState) {
     const phashArray = new Uint8Array(phashBuffer).slice(0, 32);
     const phash = encodeURIComponent(ec.base64Encode(phashArray, 1));
 
-    const url = `https://msgbrd.vercel.app/#key=${key}&sec=${encodeURIComponent(secret)}&phash=${phash}&content=${content}&expire=18`;
+    const url = `https://msgbrd.vercel.app/#key=${key}&phash=${phash}&content=${content}&expire=18`;
     openUrl(url);
     setSyncStatus(messages.saveSuccess);
   };
@@ -697,9 +735,8 @@ export function bindRestoreBtn(ec: any, state: AppState) {
     }
 
     const salt = state.G_Input!.salt!;
-    const { key: rawKey, secret } = await generateKeySecret(ec, pubkey, salt);
-    const key = encodeURIComponent(rawKey);
-    const url = `https://msgbrd.vercel.app/list#key=${key}&sec=${encodeURIComponent(secret)}`;
+    const key = encodeURIComponent(await generateKey(ec, pubkey, salt));
+    const url = `https://msgbrd.vercel.app/list#key=${key}`;
     openUrl(url);
   };
 }

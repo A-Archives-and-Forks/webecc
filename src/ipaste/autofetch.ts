@@ -4,6 +4,7 @@ import {
   setSyncStatus, setResultText, getResultText, getPlainText, encryptContent, encryptFileContent, encryptFileContentBinary,
   showBuildInfo, initSquircle, applyComputePrivkeyBtnSquircle,
   hideFileLocked, bindFilePaste, showFileLocked, enterFileModeUI, exitFileMode,
+  fireD1Init,
 } from './common';
 import { GoogleDriveManager } from './gdrive';
 
@@ -207,6 +208,10 @@ export async function autoFetchHistory(ec: any, state: any) {
 
   try {
     const historyItems = await fetchHistoryList(ec, state.G_Input.pubkey, state.G_Input.salt);
+    if (historyItems.length > 0) {
+      // 后台 init（不阻塞列表渲染），使该 key 后续可删除
+      generateKeySecret(ec, state.G_Input.pubkey, state.G_Input.salt).then(({ key, secret }) => fireD1Init(key, secret));
+    }
     renderHistoryList(ec, state, historyItems);
   } catch (error) {
     console.error('Error fetching history:', error);

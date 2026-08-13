@@ -721,6 +721,7 @@ ${messages.emailDataBase64}: ${newLine}
     const salt = G_Input.salt;
     const { key: rawKey, secret } = await generateKeySecret(pubkey, salt);
     const key = encodeURIComponent(rawKey);
+    fireD1Init(rawKey, secret);
     const emailSubjectEle = document.getElementById("emailsubject") as HTMLInputElement;
     const subject = emailSubjectEle.value.trim() || messages.emailSubjectDefault;
 
@@ -754,7 +755,7 @@ ${messages.emailDataBase64}: ${newLine}
     const phashArray = new Uint8Array(phashBuffer).slice(0, 32);
     const phash = encodeURIComponent(ec.base64Encode(phashArray, 1));
 
-    const url = `${D1_API_BASE}/#key=${key}&sec=${encodeURIComponent(secret)}&note=${note}&phash=${phash}&content=${encodedContent}&expire=-1`;
+    const url = `${D1_API_BASE}/#key=${key}&note=${note}&phash=${phash}&content=${encodedContent}&expire=-1`;
     openUrl(url);
   };
 
@@ -875,9 +876,8 @@ ${messages.emailDataBase64}: ${newLine}
     }
 
     const salt = G_Input.salt;
-    const { key: rawKey, secret } = await generateKeySecret(pubkey, salt);
-    const key = encodeURIComponent(rawKey);
-    const url = `${D1_API_BASE}/list#key=${key}&sec=${encodeURIComponent(secret)}`;
+    const key = encodeURIComponent(await generateKey(pubkey, salt));
+    const url = `${D1_API_BASE}/list#key=${key}`;
     openUrl(url);
   };
 
@@ -1082,6 +1082,38 @@ ${messages.emailDataBase64}: ${newLine}
   // --- D1 历史删除 ---
 
   const D1_API_BASE = 'https://msgbrd.vercel.app';
+  const D1_INIT_MARK_KEY = 'd1InitedKeys';
+
+  function isD1KeyInited(key: string): boolean {
+    try {
+      const map = JSON.parse(localStorage.getItem(D1_INIT_MARK_KEY) || '{}');
+      return !!map[key];
+    } catch {
+      return false;
+    }
+  }
+
+  function markD1KeyInited(key: string): void {
+    try {
+      const map = JSON.parse(localStorage.getItem(D1_INIT_MARK_KEY) || '{}');
+      map[key] = true;
+      localStorage.setItem(D1_INIT_MARK_KEY, JSON.stringify(map));
+    } catch { /* ignore */ }
+  }
+
+  // 非阻塞后台调用 /init：本地无标记时触发，不等待、不阻塞主流程
+  function fireD1Init(key: string, secret: string): void {
+    if (isD1KeyInited(key)) return;
+    fetch(`${D1_API_BASE}/init`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, secret }),
+    })
+      .then((res) => {
+        if (res.ok) markD1KeyInited(key);
+      })
+      .catch(() => { /* 静默失败，下次触发时重试 */ });
+  }
 
   async function deleteD1Record(key: string, timestr: string, secret: string): Promise<void> {
     const res = await fetch(`${D1_API_BASE}/delete`, {
@@ -1240,6 +1272,9 @@ ${messages.emailDataBase64}: ${newLine}
     container.innerHTML = `<div class="history-loading">${messages.historyLoading || '加载中...'}</div>`;
     try {
       const historyItems = await fetchHistoryList(G_Input.pubkey, G_Input.salt);
+      if (historyItems.length > 0) {
+        generateKeySecret(G_Input.pubkey, G_Input.salt).then(({ key, secret }) => fireD1Init(key, secret));
+      }
       renderHistoryList(historyItems);
     } catch (error) {
       console.error('Error fetching history:', error);
