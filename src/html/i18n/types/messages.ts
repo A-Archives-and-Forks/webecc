@@ -111,6 +111,11 @@ export interface JsMessages {
   historyLoading: string;
   historyFetchFailed: string;
   historyFetchFailedCors: string;
+  historyDelete: string;
+  historyDeleteConfirm: string;
+  historyDeleteSuccess: string;
+  historyDeleteFailed: string;
+  historyDeleteNotInit: string;
   gdriveAuthRequired: string;
   gdriveAuthFailed: string;
   gdriveSaveSuccess: string;

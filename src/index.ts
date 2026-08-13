@@ -600,8 +600,8 @@ ${messages.emailDataBase64}: ${newLine}
     window.open(mailto, "target", "");
   };
 
-  // HMAC-SHA512 两层派生，截取前33字节转为 Base64（用于 D1 key）
-  async function generateKey(pubkey: string, salt: string): Promise<string> {
+  // HMAC-SHA512 两层派生：key 用于 D1 存储 key，secret 用于 /init、/delete 鉴权（均为截取前33字节的 base64url）
+  async function generateKeySecret(pubkey: string, salt: string): Promise<{ key: string; secret: string }> {
     const encoder = new TextEncoder();
 
     // PRK = hmac_sha512(pubkey, salt)
@@ -614,7 +614,6 @@ ${messages.emailDataBase64}: ${newLine}
     );
     const prk = await crypto.subtle.sign("HMAC", prkKey, encoder.encode(salt));
 
-    // KEY = hmac_sha512(PRK, "cloudflare-d1-access") 截取前33字节
     const keyKey = await crypto.subtle.importKey(
       "raw",
       new Uint8Array(prk),
@@ -622,10 +621,20 @@ ${messages.emailDataBase64}: ${newLine}
       false,
       ["sign"]
     );
-    const keyBuffer = await crypto.subtle.sign("HMAC", keyKey, encoder.encode("cloudflare-d1-access"));
-    const keyArray = new Uint8Array(keyBuffer).slice(0, 33);
 
-    return ec.base64Encode(keyArray, 1);
+    // KEY = hmac_sha512(PRK, "cloudflare-d1-access") 截取前33字节
+    const keyBuffer = await crypto.subtle.sign("HMAC", keyKey, encoder.encode("cloudflare-d1-access"));
+    const key = ec.base64Encode(new Uint8Array(keyBuffer).slice(0, 33), 1);
+
+    // SECRET = hmac_sha512(PRK, "cloudflare-d1-secret") 截取前33字节
+    const secBuffer = await crypto.subtle.sign("HMAC", keyKey, encoder.encode("cloudflare-d1-secret"));
+    const secret = ec.base64Encode(new Uint8Array(secBuffer).slice(0, 33), 1);
+
+    return { key, secret };
+  }
+
+  async function generateKey(pubkey: string, salt: string): Promise<string> {
+    return (await generateKeySecret(pubkey, salt)).key;
   }
 
   // HMAC-SHA512 两层派生，截取前32字节（用于内容加密）
@@ -710,7 +719,8 @@ ${messages.emailDataBase64}: ${newLine}
     if (!cipher) return;
 
     const salt = G_Input.salt;
-    const key = encodeURIComponent(await generateKey(pubkey, salt));
+    const { key: rawKey, secret } = await generateKeySecret(pubkey, salt);
+    const key = encodeURIComponent(rawKey);
     const emailSubjectEle = document.getElementById("emailsubject") as HTMLInputElement;
     const subject = emailSubjectEle.value.trim() || messages.emailSubjectDefault;
 
@@ -744,7 +754,7 @@ ${messages.emailDataBase64}: ${newLine}
     const phashArray = new Uint8Array(phashBuffer).slice(0, 32);
     const phash = encodeURIComponent(ec.base64Encode(phashArray, 1));
 
-    const url = `https://msgbrd.vercel.app/#key=${key}&note=${note}&phash=${phash}&content=${encodedContent}&expire=-1`;
+    const url = `${D1_API_BASE}/#key=${key}&sec=${encodeURIComponent(secret)}&note=${note}&phash=${phash}&content=${encodedContent}&expire=-1`;
     openUrl(url);
   };
 
@@ -865,8 +875,9 @@ ${messages.emailDataBase64}: ${newLine}
     }
 
     const salt = G_Input.salt;
-    const key = encodeURIComponent(await generateKey(pubkey, salt));
-    const url = `https://msgbrd.vercel.app/list#key=${key}`;
+    const { key: rawKey, secret } = await generateKeySecret(pubkey, salt);
+    const key = encodeURIComponent(rawKey);
+    const url = `${D1_API_BASE}/list#key=${key}&sec=${encodeURIComponent(secret)}`;
     openUrl(url);
   };
 
@@ -1068,9 +1079,56 @@ ${messages.emailDataBase64}: ${newLine}
     expire: string | null;
   }
 
+  // --- D1 历史删除 ---
+
+  const D1_API_BASE = 'https://msgbrd.vercel.app';
+
+  async function deleteD1Record(key: string, timestr: string, secret: string): Promise<void> {
+    const res = await fetch(`${D1_API_BASE}/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, timestr, secret }),
+    });
+    if (!res.ok) {
+      throw new Error(`${res.status} ${await res.text()}`);
+    }
+  }
+
+  async function handleHistoryDelete(item: HistoryItem, div: HTMLElement) {
+    if (!G_Input?.pubkey || !G_Input?.salt) {
+      setErrMsg(messages.errNeedBookmark);
+      return;
+    }
+    const confirmDetail = `${formatTime(item.timeString)}${item.note ? '\n' + item.note : ''}`;
+    if (!confirm(messages.historyDeleteConfirm + '\n\n' + confirmDetail)) return;
+
+    const delBtn = div.querySelector(".history-item-del") as HTMLElement | null;
+    if (delBtn) delBtn.style.pointerEvents = "none";
+    try {
+      const { key, secret } = await generateKeySecret(G_Input.pubkey, G_Input.salt);
+      await deleteD1Record(key, item.timeString, secret);
+      div.remove();
+      const container = document.getElementById("historyList");
+      if (container && container.children.length === 0) {
+        container.innerHTML = `<div class="history-empty">${messages.loadEmpty || '暂无数据'}</div>`;
+      }
+      alert(messages.historyDeleteSuccess);
+    } catch (error) {
+      console.error("Error deleting history:", error);
+      const msg = (error as Error).message;
+      if (/not initialized/i.test(msg)) {
+        setErrMsg(messages.historyDeleteNotInit);
+      } else {
+        setErrMsg(messages.historyDeleteFailed + ": " + msg);
+      }
+    } finally {
+      if (delBtn) delBtn.style.pointerEvents = "";
+    }
+  }
+
   async function fetchHistoryList(pubkey: string, salt: string): Promise<HistoryItem[]> {
     const key = encodeURIComponent(await generateKey(pubkey, salt));
-    const url = `https://msgbrd.vercel.app/${key}`;
+    const url = `${D1_API_BASE}/${key}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('Failed to fetch history');
     const data = await response.json();
@@ -1079,7 +1137,7 @@ ${messages.emailDataBase64}: ${newLine}
 
   async function fetchHistoryDetail(pubkey: string, salt: string, timeString: string): Promise<string> {
     const key = encodeURIComponent(await generateKey(pubkey, salt));
-    const url = `https://msgbrd.vercel.app/${key}/${encodeURIComponent(timeString)}?fmt=json`;
+    const url = `${D1_API_BASE}/${key}/${encodeURIComponent(timeString)}?fmt=json`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('Failed to fetch detail');
     const data = await response.json();
@@ -1118,11 +1176,19 @@ ${messages.emailDataBase64}: ${newLine}
       const div = document.createElement('div');
       div.className = 'history-item';
       div.innerHTML = `
-        <div class="history-item-time">${formatTime(item.timeString)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div class="history-item-time">${formatTime(item.timeString)}</div>
+          <button class="history-item-del" type="button" title="${messages.historyDelete}" aria-label="${messages.historyDelete}">✕</button>
+        </div>
         <div class="history-item-note">${item.note || '(no note)'}</div>
         ${expireStr ? `<div class="history-item-expire">过期: ${expireStr}</div>` : ''}
       `;
       div.onclick = () => handleHistoryClick(item, div);
+      const delBtn = div.querySelector('.history-item-del') as HTMLButtonElement;
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        handleHistoryDelete(item, div);
+      };
       container.appendChild(div);
     });
   }

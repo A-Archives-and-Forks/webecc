@@ -332,7 +332,7 @@ export async function pbkdf2(
   return kp;
 }
 
-export async function generateKey(ec: any, pubkey: string, salt: string): Promise<string> {
+export async function generateKeySecret(ec: any, pubkey: string, salt: string): Promise<{ key: string; secret: string }> {
   const encoder = new TextEncoder();
   const prkKey = await crypto.subtle.importKey(
     "raw",
@@ -350,8 +350,14 @@ export async function generateKey(ec: any, pubkey: string, salt: string): Promis
     ["sign"]
   );
   const keyBuffer = await crypto.subtle.sign("HMAC", keyKey, encoder.encode("cloudflare-d1-access"));
-  const keyArray = new Uint8Array(keyBuffer).slice(0, 33);
-  return ec.base64Encode(keyArray, 1);
+  const key = ec.base64Encode(new Uint8Array(keyBuffer).slice(0, 33), 1);
+  const secBuffer = await crypto.subtle.sign("HMAC", keyKey, encoder.encode("cloudflare-d1-secret"));
+  const secret = ec.base64Encode(new Uint8Array(secBuffer).slice(0, 33), 1);
+  return { key, secret };
+}
+
+export async function generateKey(ec: any, pubkey: string, salt: string): Promise<string> {
+  return (await generateKeySecret(ec, pubkey, salt)).key;
 }
 
 export async function generateContentKey(pubkey: string, salt: string): Promise<CryptoKey> {
@@ -645,7 +651,8 @@ export function bindSaveBtn(ec: any, state: AppState) {
     }
 
     const salt = state.G_Input!.salt!;
-    const key = encodeURIComponent(await generateKey(ec, pubkey, salt));
+    const { key: rawKey, secret } = await generateKeySecret(ec, pubkey, salt);
+    const key = encodeURIComponent(rawKey);
 
     let te = new TextEncoder();
     let enc = await ec.encrypt(pubkey, te.encode(plainText));
@@ -673,7 +680,7 @@ export function bindSaveBtn(ec: any, state: AppState) {
     const phashArray = new Uint8Array(phashBuffer).slice(0, 32);
     const phash = encodeURIComponent(ec.base64Encode(phashArray, 1));
 
-    const url = `https://msgbrd.vercel.app/#key=${key}&phash=${phash}&content=${content}&expire=18`;
+    const url = `https://msgbrd.vercel.app/#key=${key}&sec=${encodeURIComponent(secret)}&phash=${phash}&content=${content}&expire=18`;
     openUrl(url);
     setSyncStatus(messages.saveSuccess);
   };
@@ -690,8 +697,9 @@ export function bindRestoreBtn(ec: any, state: AppState) {
     }
 
     const salt = state.G_Input!.salt!;
-    const key = encodeURIComponent(await generateKey(ec, pubkey, salt));
-    const url = `https://msgbrd.vercel.app/list#key=${key}`;
+    const { key: rawKey, secret } = await generateKeySecret(ec, pubkey, salt);
+    const key = encodeURIComponent(rawKey);
+    const url = `https://msgbrd.vercel.app/list#key=${key}&sec=${encodeURIComponent(secret)}`;
     openUrl(url);
   };
 }

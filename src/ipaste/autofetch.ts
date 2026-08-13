@@ -15,9 +15,56 @@ export interface HistoryItem {
   expire: string | null;
 }
 
+// --- D1 历史删除 ---
+
+const D1_API_BASE = 'https://msgbrd.vercel.app';
+
+async function deleteD1Record(key: string, timestr: string, secret: string): Promise<void> {
+  const res = await fetch(`${D1_API_BASE}/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, timestr, secret }),
+  });
+  if (!res.ok) {
+    throw new Error(`${res.status} ${await res.text()}`);
+  }
+}
+
+async function handleHistoryDelete(ec: any, state: any, item: HistoryItem, div: HTMLElement) {
+  if (!state.G_Input?.pubkey || !state.G_Input?.salt) {
+    setErrMsg(messages.errNeedBookmark);
+    return;
+  }
+  const confirmDetail = `${formatTime(item.timeString)}${item.note ? '\n' + item.note : ''}`;
+  if (!confirm(messages.historyDeleteConfirm + '\n\n' + confirmDetail)) return;
+
+  const delBtn = div.querySelector(".history-item-del") as HTMLElement | null;
+  if (delBtn) delBtn.style.pointerEvents = "none";
+  try {
+    const { key, secret } = await generateKeySecret(ec, state.G_Input.pubkey, state.G_Input.salt);
+    await deleteD1Record(key, item.timeString, secret);
+    div.remove();
+    const container = document.getElementById("historyList");
+    if (container && container.children.length === 0) {
+      container.innerHTML = `<div class="history-empty">${messages.loadEmpty}</div>`;
+    }
+    setSyncStatus(messages.historyDeleteSuccess);
+  } catch (error) {
+    console.error("Error deleting history:", error);
+    const msg = (error as Error).message;
+    if (/not initialized/i.test(msg)) {
+      setErrMsg(messages.historyDeleteNotInit);
+    } else {
+      setErrMsg(messages.historyDeleteFailed + ": " + msg);
+    }
+  } finally {
+    if (delBtn) delBtn.style.pointerEvents = "";
+  }
+}
+
 export async function fetchHistoryList(ec: any, pubkey: string, salt: string): Promise<HistoryItem[]> {
   const key = encodeURIComponent(await generateKey(ec, pubkey, salt));
-  const url = `https://msgbrd.vercel.app/${key}`;
+  const url = `${D1_API_BASE}/${key}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch history');
   const data = await response.json();
@@ -26,14 +73,14 @@ export async function fetchHistoryList(ec: any, pubkey: string, salt: string): P
 
 export async function fetchHistoryDetail(ec: any, pubkey: string, salt: string, timeString: string): Promise<string> {
   const key = encodeURIComponent(await generateKey(ec, pubkey, salt));
-  const url = `https://msgbrd.vercel.app/${key}/${encodeURIComponent(timeString)}?fmt=json`;
+  const url = `${D1_API_BASE}/${key}/${encodeURIComponent(timeString)}?fmt=json`;
   const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch detail');
   const data = await response.json();
   return data.content || '';
 }
 
-async function generateKey(ec: any, pubkey: string, salt: string): Promise<string> {
+async function generateKeySecret(ec: any, pubkey: string, salt: string): Promise<{ key: string; secret: string }> {
   const encoder = new TextEncoder();
   const prkKey = await crypto.subtle.importKey(
     "raw",
@@ -51,8 +98,14 @@ async function generateKey(ec: any, pubkey: string, salt: string): Promise<strin
     ["sign"]
   );
   const keyBuffer = await crypto.subtle.sign("HMAC", keyKey, encoder.encode("cloudflare-d1-access"));
-  const keyArray = new Uint8Array(keyBuffer).slice(0, 33);
-  return ec.base64Encode(keyArray, 1);
+  const key = ec.base64Encode(new Uint8Array(keyBuffer).slice(0, 33), 1);
+  const secBuffer = await crypto.subtle.sign("HMAC", keyKey, encoder.encode("cloudflare-d1-secret"));
+  const secret = ec.base64Encode(new Uint8Array(secBuffer).slice(0, 33), 1);
+  return { key, secret };
+}
+
+async function generateKey(ec: any, pubkey: string, salt: string): Promise<string> {
+  return (await generateKeySecret(ec, pubkey, salt)).key;
 }
 
 function formatTime(isoStr: string): string {
@@ -89,11 +142,19 @@ function renderHistoryList(ec: any, state: any, items: HistoryItem[]) {
     const div = document.createElement('div');
     div.className = 'history-item';
     div.innerHTML = `
-      <div class="history-item-time">${formatTime(item.timeString)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="history-item-time">${formatTime(item.timeString)}</div>
+        <button class="history-item-del" type="button" title="${messages.historyDelete}" aria-label="${messages.historyDelete}">✕</button>
+      </div>
       <div class="history-item-note">${item.note || '(no note)'}</div>
       ${expireStr ? `<div class="history-item-expire">过期: ${expireStr}</div>` : ''}
     `;
     div.onclick = () => handleHistoryClick(ec, state, item, div);
+    const delBtn = div.querySelector('.history-item-del') as HTMLButtonElement;
+    delBtn.onclick = (e) => {
+      e.stopPropagation();
+      handleHistoryDelete(ec, state, item, div);
+    };
     container.appendChild(div);
   });
 }
@@ -153,7 +214,7 @@ export async function autoFetchHistory(ec: any, state: any) {
 
 export async function fetchLatestContent(ec: any, pubkey: string, salt: string): Promise<string> {
   const key = encodeURIComponent(await generateKey(ec, pubkey, salt));
-  const url = `https://msgbrd.vercel.app/${key}/latest?fmt=json`;
+  const url = `${D1_API_BASE}/${key}/latest?fmt=json`;
   const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch latest content');
   const text = await response.text();

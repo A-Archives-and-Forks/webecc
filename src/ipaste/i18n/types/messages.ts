@@ -72,6 +72,11 @@ export interface JsMessages {
   historyLoading: string;
   historyFetchFailed: string;
   historyFetchFailedCors: string;
+  historyDelete: string;
+  historyDeleteConfirm: string;
+  historyDeleteSuccess: string;
+  historyDeleteFailed: string;
+  historyDeleteNotInit: string;
   emailSubjectDefault: string;
   inputDataLabel: string;
   saveSuccess: string;
