@@ -31,6 +31,8 @@ export const jsMessages: JsMessages = {
   historyDeleteSuccess: 'Deleted',
   historyDeleteFailed: 'Delete failed',
   historyDeleteNotInit: 'This key is not initialized on the cloud. Open the cloud page with the sec link once, then delete again',
+  historyDeleteCode: 'Enter the code below to confirm deletion',
+  historyDeleteCodeMismatch: 'Incorrect code, not deleted',
   gdriveAuthRequired: 'Sign in with Google Drive first',
   gdriveAuthFailed: 'Google authorization failed',
   gdriveSaveSuccess: 'Saved to Google Drive',

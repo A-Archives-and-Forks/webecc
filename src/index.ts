@@ -1100,7 +1100,14 @@ ${messages.emailDataBase64}: ${newLine}
       return;
     }
     const confirmDetail = `${formatTime(item.timeString)}${item.note ? '\n' + item.note : ''}`;
-    if (!confirm(messages.historyDeleteConfirm + '\n\n' + confirmDetail)) return;
+    let code = '';
+    for (let i = 0; i < 4; i++) code += String.fromCharCode(65 + Math.floor(Math.random() * 26));
+    const ans = prompt(`${messages.historyDeleteConfirm}\n\n${confirmDetail}\n\n${messages.historyDeleteCode}: ${code}`);
+    if (ans === null) return;
+    if (ans.trim().toUpperCase() !== code) {
+      setErrMsg(messages.historyDeleteCodeMismatch);
+      return;
+    }
 
     const delBtn = div.querySelector(".history-item-del") as HTMLElement | null;
     if (delBtn) delBtn.style.pointerEvents = "none";

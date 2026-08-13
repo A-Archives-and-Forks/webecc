@@ -18,6 +18,8 @@ export const jsMessages: JsMessages = {
   historyDeleteSuccess: '已删除',
   historyDeleteFailed: '删除失败',
   historyDeleteNotInit: '该密钥尚未在云端初始化，请先通过带 sec 的链接打开云端页面一次后再删除',
+  historyDeleteCode: '请输入下方验证码确认删除',
+  historyDeleteCodeMismatch: '验证码不正确，未删除',
   emailSubjectDefault: '备份',
   inputDataLabel: '从书签链接带入的信息',
   saveSuccess: '已保存到云端',

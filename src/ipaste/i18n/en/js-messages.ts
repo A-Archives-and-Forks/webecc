@@ -18,6 +18,8 @@ export const jsMessages: JsMessages = {
   historyDeleteSuccess: 'Deleted',
   historyDeleteFailed: 'Delete failed',
   historyDeleteNotInit: 'This key is not initialized on the cloud. Open the cloud page with the sec link once, then delete again',
+  historyDeleteCode: 'Enter the code below to confirm deletion',
+  historyDeleteCodeMismatch: 'Incorrect code, not deleted',
   emailSubjectDefault: 'Backup',
   inputDataLabel: 'Info from bookmark link',
   saveSuccess: 'Saved to cloud',

@@ -116,6 +116,8 @@ export interface JsMessages {
   historyDeleteSuccess: string;
   historyDeleteFailed: string;
   historyDeleteNotInit: string;
+  historyDeleteCode: string;
+  historyDeleteCodeMismatch: string;
   gdriveAuthRequired: string;
   gdriveAuthFailed: string;
   gdriveSaveSuccess: string;
